@@ -1,44 +1,36 @@
-import { Rocket, Telescope } from "lucide-react"
+import { Rocket } from "lucide-react"
 import { Button } from "./ui/button"
 import CardSwap, { Card } from "./CardSwap"
 import earthHero from "@/assets/earth-hero.jpg";
 import marsMission from "@/assets/mars-mission.jpg";
 import nebula from "@/assets/nebula.jpg";
+import { useNavigate } from "react-router-dom";
 
 const Hero = () => {
+    const navigate = useNavigate();
   return (
     <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
         <div className="container mx-auto px-4 py-20 relative z-10">
             <div className="grid lg:grid-cols-2 gap-12 items-center">
                 {/* Content */}
-                <div className="text-center lg:text-left space-y-8 animate-fade-in">
+                <div className="text-center lg:text-left space-y-8 animate-fade-in -translate-y-12">
                     <div className="inline-block">
                         <span className="px-4 py-2 bg-card border border-primary/30 rounded-full text-sm font-medium text-primary">
                             Bioscience
                         </span>
                     </div>
 
-                    <h1 className="text-5xl md:text-7xl font-bold leading-tight">
-                        NASA Space Apps
+                    <h1 className="text-5xl md:text-6xl font-extrabold leading-tight">
+                        NASA Space Biology Knowledge Engine
                         <span className="block bg-clip-text text-accent">
                             GARDS
                         </span>
                     </h1>
                     
                     <p className="text-xl text-muted-foreground max-w-2xl">
-                        lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum
+                        Explore the wonders of space biology with NASA’s cutting-edge knowledge engine, GARDS. Unlock new insights and accelerate research in the biosciences of space exploration.
                     </p>
 
-                    <div className="flex flex-wrap gap-4 justify-center lg:justify-start">
-                        <Button size="lg" className="bg-primary hover:bg-primary/90 shadow-cosmic group">
-                            <Rocket className="mr-2 h-5 w-5 group-hover:animate-float" />
-                            Search Publications
-                        </Button>
-                        {/* <Button size="lg" variant="outline" className="border-primary/50 hover:bg-primary/10">
-                            <Telescope className="mr-2 h-5 w-5" />
-                            Learn More
-                        </Button> */}
-                    </div>
                 </div>
             {/* CardSwap Component */}
             <div className="relative h-[300px] animate-fade-in max-w-[600px] mx-auto lg:mx-0" style={{ animationDelay: "0.2s" }}>
