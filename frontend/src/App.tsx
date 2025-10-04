@@ -4,6 +4,7 @@ import { ThemeProvider } from './components/ThemeProvider'
 import NavBar from './components/NavBar'
 import Home from './pages/Home'
 import Publications from './pages/Publications'
+import AskGards from './pages/AskGards'
 
 function App() {
 
@@ -16,6 +17,7 @@ function App() {
             <Routes>
               <Route path='/' element={<Home />} />
               <Route path='/publications' element={<Publications />} />
+              <Route path='/ask-gards' element={<AskGards />} />
             </Routes>
           </div>
         </BrowserRouter>
