@@ -215,7 +215,7 @@ def embed_text(texts):
     """Get embeddings using SentenceTransformer"""
     if isinstance(texts, str):
         texts = [texts]
-    embeddings = embed_model.encode(texts, convert_to_numpy=True)
+    embeddings = model.encode(texts, convert_to_numpy=True)
     return embeddings.astype("float32")
 
 def evaluate_and_summarize(chunks, query):
@@ -258,7 +258,7 @@ def evaluate_and_summarize(chunks, query):
     )
     return response.text
 
-app.route("/api/chatbot", methods=["POST"])
+@app.route("/api/chatbot", methods=["POST"])
 def chatbot():
     data = request.json
     query = data.get("query", "")
@@ -277,21 +277,21 @@ def chatbot():
     # Step 3: Ask Gemini to evaluate and summarize
     summary = evaluate_and_summarize(retrieved_chunks, query)
 
-    # Step 4: Format response
+    # Step 4: Format retrieved chunks
     results = []
-    for i, chunk in enumerate(retrieved_chunks):
+    for chunk in retrieved_chunks:
         results.append({
             "title": chunk["title"],
             "authors": chunk.get("authors", []),
             "section": chunk.get("section", ""),
             "doi": chunk.get("doi", ""),
             "url": chunk.get("url", ""),
-            "chunk_text": chunk.get("chunk_text", "")
+            # "chunk_text": chunk.get("chunk_text", "")
         })
 
+    # Step 5: Return JSON
     return jsonify({
         "query": query,
-        "total_chunks": len(retrieved_chunks),
         "summary": summary,
         "retrieved_chunks": results
     })
