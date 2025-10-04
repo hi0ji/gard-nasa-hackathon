@@ -26,7 +26,7 @@ const Home = () => {
         </div>
         
         {/* Foreground content */}
-        <div className="min-h-screen pointer-events-none">
+        <div className="h-full pointer-events-none">
             <Hero />
         </div>
       </div>
