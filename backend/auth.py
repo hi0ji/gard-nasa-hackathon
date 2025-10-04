@@ -1,5 +1,4 @@
 from functools import wraps
-
 from flask import make_response, request, current_app
 
 def auth(f):
