@@ -33,8 +33,8 @@ gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 model = SentenceTransformer("all-MiniLM-L6-v2")
 index = faiss.read_index("model/new_papers.index")
 
-# with open("model/new_papers_metadata.pkl", "rb") as f:
-#     metadata = pickle.load(f)
+with open("model/new_papers_metadata.pkl", "rb") as f:
+    metadata = pickle.load(f)
 
 df = pd.read_csv("data/papers_csv.csv")
 
@@ -125,59 +125,51 @@ def expand_query_with_gemini(query: str, num_words: int = 3):
 
     return related
 
+# @app.route("/api/search_papers", methods=["POST"])
+# def search_papers():
+#     data = request.json
+#     query = data.get("query", "")
+#     k = int(data.get("k", 5))
+
+#     if not query:
+#         return jsonify({"error": "Missing query"}), 400
+
+#     # Expand query with Gemini
+#     expanded_words = expand_query_with_gemini(query, num_words=3)
+
+#     # Score each title by how many expanded words it contains
+#     scores = []
+#     for _, row in df.iterrows():
+#         title = str(row["Title"]).lower()
+#         match_count = sum(1 for w in expanded_words if w.lower() in title)
+#         if match_count > 0:
+#             scores.append((match_count, row))
+
+#     scores.sort(key=lambda x: x[0], reverse=True)
+
+#     results = []
+#     for match_count, row in scores:
+#         results.append({
+#             "PMCID": row["PMCID"],
+#             "Title": row["Title"],
+#             "MatchScore": match_count,
+#             "ExpandedWords": expanded_words
+#         })
+
+#     return jsonify({"query": query, "total_results": len(results), "results": results})
 @app.route("/api/search_papers", methods=["POST"])
 def search_papers():
-    # data = request.json
-    # query = data.get("query", "")
-    # k = int(data.get("k", 5))
-
-    # if not query:
-    #     return jsonify({"error": "Missing query"}), 400
-    
-    # print("FAISS index size:", index.ntotal)
-    # # print("CSV rows:", len(df))
-
-    # # Convert query → embedding
-    # query_vec = model.encode([query], convert_to_numpy=True)
-    # D, I = index.search(query_vec, k)
-
-    # results = []
-    # retrieved_chunks = []
-
-    # for idx, score in zip(I[0], D[0]):
-    #     meta = metadata[idx]  # <- each chunk has metadata
-    #     results.append({
-    #         "PMCID": meta.get("pmcid"),
-    #         "Title": meta.get("title"),
-    #         # "Section": meta.get("section"),
-    #         # "ChunkText": meta.get("chunk_text"),
-    #         "Score": float(score)
-    #     })
-
-    #     retrieved_chunks.append(
-    #         f"[Paper: {meta.get('title')} | Section: {meta.get('section')}]"
-    #         f"\n{meta.get('chunk_text')}"
-    #     )
-
-    # # Combine into a context string for downstream tasks
-    # context = "\n\n".join(retrieved_chunks)
-
-    # return jsonify({
-    #     "query": query,
-    #     "results": results,
-    #     "context": context
-    # })
     data = request.json
     query = data.get("query", "")
-    k = int(data.get("k", 5))
+    page = int(data.get("page", 1))
+    limit = int(data.get("limit", 9))
 
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    # Expand query with Gemini
     expanded_words = expand_query_with_gemini(query, num_words=3)
 
-    # Score each title by how many expanded words it contains
+    # Score titles
     scores = []
     for _, row in df.iterrows():
         title = str(row["Title"]).lower()
@@ -187,17 +179,122 @@ def search_papers():
 
     scores.sort(key=lambda x: x[0], reverse=True)
 
-    results = []
-    for match_count, row in scores:
-        results.append({
+    # Paginate
+    start = (page - 1) * limit
+    end = start + limit
+    total = len(scores)
+    page_scores = scores[start:end]
+
+    papers = []
+    for match_count, row in page_scores:
+        papers.append({
             "PMCID": row["PMCID"],
             "Title": row["Title"],
             "MatchScore": match_count,
             "ExpandedWords": expanded_words
         })
 
-    return jsonify({"query": query, "total_results": len(results), "results": results})
+    return jsonify({
+        "query": query,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "has_next": end < total,
+        "has_prev": page > 1,
+        "next_page": page + 1 if end < total else None,
+        "prev_page": page - 1 if page > 1 else None,
+        "papers": papers
+    })
 
+
+
+
+
+
+def embed_text(texts):
+    """Get embeddings using SentenceTransformer"""
+    if isinstance(texts, str):
+        texts = [texts]
+    embeddings = embed_model.encode(texts, convert_to_numpy=True)
+    return embeddings.astype("float32")
+
+def evaluate_and_summarize(chunks, query):
+    """
+    Use Gemini to:
+    1. Evaluate relevance of FAISS chunks
+    2. Optionally refine query
+    3. Summarize findings clearly and concisely
+    """
+    context_text = "\n\n".join([f"[{c['title']} | {c['section']}]\n{c['chunk_text']}" for c in chunks])
+
+    prompt = f"""
+    You are a Research Assistant that helps users find relevant academic literature. You are connected to a FAISS vector database that returns chunks of text from possible sources.
+
+    Follow these rules:
+
+    Understand the user’s query. Infer what type of research the user is looking for.
+
+    Evaluate FAISS chunks carefully. The chunks may be inaccurate, loosely related, or irrelevant. Do not blindly trust them.
+
+    Refine query once if needed. If the initial FAISS chunks seem unrelated or insufficient, reformulate the user’s query into a clearer, more precise research query and re-query FAISS only once. After that, continue with the results you have.
+
+    Build the final answer.
+
+    If relevant sources are found, summarize and synthesize them clearly, citing which chunks they came from.
+
+    If the chunks are not relevant, be transparent: explain that no directly related results were found, but still provide the returned chunks as references.
+
+    Be clear, concise, and act like a careful research assistant. Do not overclaim. Always distinguish between relevant findings and weak/irrelevant matches.
+
+    User query: "{query}"
+
+    FAISS chunks:
+    {context_text}
+    """
+
+    response = gemini_client.models.generate_content(
+        model=CHAT_MODEL,
+        contents=prompt
+    )
+    return response.text
+
+app.route("/api/chatbot", methods=["POST"])
+def chatbot():
+    data = request.json
+    query = data.get("query", "")
+    top_k = int(data.get("top_k", TOP_K))
+
+    if not query:
+        return jsonify({"error": "Missing query"}), 400
+    
+    # Step 1: Embed query
+    query_vec = embed_text(query)
+
+    # Step 2: Retrieve top FAISS chunks
+    D, I = index.search(query_vec, top_k)
+    retrieved_chunks = [metadata[idx] for idx in I[0]]
+
+    # Step 3: Ask Gemini to evaluate and summarize
+    summary = evaluate_and_summarize(retrieved_chunks, query)
+
+    # Step 4: Format response
+    results = []
+    for i, chunk in enumerate(retrieved_chunks):
+        results.append({
+            "title": chunk["title"],
+            "authors": chunk.get("authors", []),
+            "section": chunk.get("section", ""),
+            "doi": chunk.get("doi", ""),
+            "url": chunk.get("url", ""),
+            "chunk_text": chunk.get("chunk_text", "")
+        })
+
+    return jsonify({
+        "query": query,
+        "total_chunks": len(retrieved_chunks),
+        "summary": summary,
+        "retrieved_chunks": results
+    })
 
 # Main
 if __name__ == "__main__":
