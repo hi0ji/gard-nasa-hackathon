@@ -1,22 +1,21 @@
 from flask import Flask, render_template
-import json
+import json, os
+from auth import auth
 from flask import jsonify
 
+# Application configs
 app = Flask(__name__) 
+# Todo: wrap this into the .env 
+app.config["SITE_USER"] = "pj"
+app.config["SITE_PASS"] = "pj"
 
-with open("data/papers.json", "r", encoding="utf-8") as f:
+
+with open("data/old/papers.json", "r", encoding="utf-8") as f:
     papers = json.load(f)
 
-# Routes
-@app.route("/")
-def main():
-    return "Hello Main"
-
-@app.route("/test")
-def test():
-    return "Flask is working!"
-
+# API Routes
 @app.route("/api/get_paper/<pmcid>", methods=["GET"])
+@auth
 def get_paper(pmcid):
     paper = next((p for p in papers if p["PMCID"] == pmcid), None)
     
