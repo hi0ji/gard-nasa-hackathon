@@ -1,15 +1,16 @@
 from flask import Flask, jsonify, request
-import json, os
+import json, os, pickle, requests, faiss, requests
 from auth import auth
 from sentence_transformers import SentenceTransformer
-import google.generativeai as genai
+# import google.generativeai as genai
 from google import genai
+from google.genai.types import Tool, GenerateContentConfig
 from dotenv import load_dotenv
-import faiss
 import numpy as np
 import pandas as pd
 from flask_cors import CORS
-import pickle
+from bs4 import BeautifulSoup
+import re
 
 # Application configs
 app = Flask(__name__) 
@@ -25,7 +26,8 @@ with open("data/papers.json", "r", encoding="utf-8") as f:
 
 # Load FAISS and metadata
 CHAT_MODEL = "gemini-2.5-flash"
-TOP_K = 3
+TOP_K = 10
+chats = {}
 
 # Initialize Gemini client
 gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -38,6 +40,157 @@ with open("model/new_papers_metadata.pkl", "rb") as f:
 
 df = pd.read_csv("data/papers_csv.csv")
 
+SYSTEM_PROMPT = """
+    You are GARD, a highly capable Research Assistant specialized in helping users find, understand, and analyze academic literature.
+    You communicate like a well-trained researcher—clear, analytical, and precise.
+
+    Your objectives are to:
+
+    Understand the user’s academic intent — whether they want a summary, critique, methodological explanation, or discussion of implications.
+
+    Think deeply and step-by-step through complex scientific or research-based questions.
+
+    Provide truthful, evidence-based, and context-aware answers while keeping your tone scholarly yet approachable.
+
+    📄 When a user provides a paper link (e.g., DOI or PMC):
+
+    Read and analyze the paper carefully.
+
+    Summarize or respond depending on the user’s intent:
+
+    If the user wants a summary:
+
+    Structure your answer as follows:
+
+    Title – The paper’s title (if available).
+
+    Overview – What the paper studies and its research goal.
+
+    Key Topics and Findings – Bullet points summarizing core results, methods, and implications.
+
+    Conclusion – Concise academic summary of the paper’s takeaway.
+
+    If the user asks analytical questions (e.g., “Why did they use this method?”, “What are the impacts of this study?”, “What could have been improved?”):
+
+    Methodology Reasoning – Explain why the researchers likely chose that method (refer to context, study design, and standard practice).
+
+    Alternative Approaches – Briefly describe what other methods could have been used, and their pros/cons.
+
+    Implications and Impact – Discuss how the study contributes to its field, real-world effects, and future research potential.
+
+    Critical Insight – Offer a balanced academic interpretation, emphasizing both strengths and limitations.
+
+    ⚠️ If the link is invalid or inaccessible:
+
+    Politely say:
+
+    “Please include a valid research paper link (like a PMC or DOI) so I can analyze it.”
+
+    If access fails, respond:
+
+    “I couldn’t access the full paper. Could you provide a different link or upload the text?”
+
+    🎯 Writing Style Guidelines
+
+    Be factual, clear, and concise — suitable for scholars, researchers, or graduate students.
+
+    Avoid generic or vague explanations. Always explain the reasoning behind a paper’s methods, findings, or conclusions.
+
+    Maintain an academic but approachable tone — insightful, nuanced, and evidence-driven.    
+    """
+
+# Functions
+def expand_query_with_gemini(query: str, num_words: int = 3):
+    """
+    Uses Gemini to expand a query with related words.
+    Example: 'rat' -> ['rat', 'mouse', 'mice', 'rodent']
+    """
+    prompt = (
+        f"Give me {num_words} plain English synonyms or closely related words to '{query}', "
+        "suitable for searching scientific papers. Return only a comma-separated list without explanation."
+    )
+
+    # Use the new Gemini API v1 call
+    response = gemini_client.models.generate_content(
+        model=CHAT_MODEL,
+        contents=prompt
+    )
+
+    # Split by comma and clean up
+    related = [w.strip() for w in response.text.split(",") if w.strip()]
+
+    # Ensure original query is included
+    if query not in related:
+        related.insert(0, query)
+
+    return related
+
+    
+
+def embed_text(texts):
+    """Get embeddings using SentenceTransformer"""
+    if isinstance(texts, str):
+        texts = [texts]
+    embeddings = model.encode(texts, convert_to_numpy=True)
+    return embeddings.astype("float32")
+
+def evaluate_and_summarize(chunks, query):
+    """
+    Use Gemini to:
+    1. Evaluate relevance of FAISS chunks
+    2. Optionally refine query
+    3. Summarize findings clearly and concisely
+    """
+    context_text = "\n\n".join([f"[{c['title']} | {c['section']}]\n{c['chunk_text']}" for c in chunks])
+
+    prompt = f"""
+        You are GARD a Research Assistant that helps users find relevant academic literature. 
+        You are a highly capable, thoughtful, and precise assistant. Your goal is to deeply understand the user's intent, think step-by-step through complex problems, provide clear and accurate answers, and proactively anticipate helpful follow-up information. Always prioritize being truthful, nuanced, insightful, and efficient.
+        You are connected to a FAISS vector database that returns chunks of text from possible sources.
+
+        Follow these rules:
+
+        Understand the user’s query. Infer what type of research the user is looking for (e.g., mice-related studies, cell biology papers, etc.).
+
+        Evaluate FAISS chunks carefully. The chunks may be inaccurate, loosely related, or irrelevant. Do not blindly trust them.
+
+        Refine query once if needed. If the initial results seem unrelated or insufficient, reformulate the user’s query into a clearer, more precise research query and re-query only once. After that, continue with the results you have.
+
+        Avoid duplicates. If the same paper or source appears more than once, list it only once.
+        
+        Build the final answer.
+            Begin by briefly introducing what you found in relation to the user’s query (e.g., “I found a few papers that discuss this topic, though some are more directly relevant than others”).
+
+            When listing results, explain each paper a little: what it studies, what methods or findings are highlighted, and why it may be relevant.
+
+            If the results are not strongly relevant, be transparent: explain that no directly related sources were found, but share what was returned anyway in case it helps.
+
+        Style.
+            Speak as if you are addressing a student, researcher, or scholar.
+
+            Be clear, concise, and professional.
+
+            Do not use technical terms like “chunks” that might confuse the user.
+
+            Always distinguish between highly relevant and weak/possibly irrelevant results.
+            
+        If relevant sources are found, summarize and synthesize them clearly, citing which paper they came from.
+
+        If the chunks are not relevant, be transparent: explain that no directly related results were found, but still provide the returned chunks as references.
+
+        Be clear, concise, and act like a careful research assistant. Do not overclaim. Always distinguish between relevant findings and weak/irrelevant matches.
+
+        User query: "{query}"
+
+        FAISS chunks:
+        {context_text}
+    """
+
+    response = gemini_client.models.generate_content(
+        model=CHAT_MODEL,
+        contents=prompt
+    )
+    return response.text
 
 
 # API Routes
@@ -100,63 +253,6 @@ def get_paper(pmcid):
     else:
         return jsonify({"error": "Paper not found"}), 404
 
-def expand_query_with_gemini(query: str, num_words: int = 3):
-    """
-    Uses Gemini to expand a query with related words.
-    Example: 'rat' -> ['rat', 'mouse', 'mice', 'rodent']
-    """
-    prompt = (
-        f"Give me {num_words} plain English synonyms or closely related words to '{query}', "
-        "suitable for searching scientific papers. Return only a comma-separated list without explanation."
-    )
-
-    # Use the new Gemini API v1 call
-    response = gemini_client.models.generate_content(
-        model=CHAT_MODEL,
-        contents=prompt
-    )
-
-    # Split by comma and clean up
-    related = [w.strip() for w in response.text.split(",") if w.strip()]
-
-    # Ensure original query is included
-    if query not in related:
-        related.insert(0, query)
-
-    return related
-
-# @app.route("/api/search_papers", methods=["POST"])
-# def search_papers():
-#     data = request.json
-#     query = data.get("query", "")
-#     k = int(data.get("k", 5))
-
-#     if not query:
-#         return jsonify({"error": "Missing query"}), 400
-
-#     # Expand query with Gemini
-#     expanded_words = expand_query_with_gemini(query, num_words=3)
-
-#     # Score each title by how many expanded words it contains
-#     scores = []
-#     for _, row in df.iterrows():
-#         title = str(row["Title"]).lower()
-#         match_count = sum(1 for w in expanded_words if w.lower() in title)
-#         if match_count > 0:
-#             scores.append((match_count, row))
-
-#     scores.sort(key=lambda x: x[0], reverse=True)
-
-#     results = []
-#     for match_count, row in scores:
-#         results.append({
-#             "PMCID": row["PMCID"],
-#             "Title": row["Title"],
-#             "MatchScore": match_count,
-#             "ExpandedWords": expanded_words
-#         })
-
-#     return jsonify({"query": query, "total_results": len(results), "results": results})
 @app.route("/api/search_papers", methods=["POST"])
 def search_papers():
     data = request.json
@@ -171,9 +267,15 @@ def search_papers():
 
     # Score titles
     scores = []
+    searchable_fields = ["Title", "PMCID", "Authors", "Year"]
+
     for _, row in df.iterrows():
-        title = str(row["Title"]).lower()
-        match_count = sum(1 for w in expanded_words if w.lower() in title)
+        match_count = 0
+
+        for field in searchable_fields:
+            value = str(row.get(field, "")).lower()
+            match_count += sum(1 for w in expanded_words if w.lower() in value)
+
         if match_count > 0:
             scores.append((match_count, row))
 
@@ -207,56 +309,6 @@ def search_papers():
     })
 
 
-
-
-
-
-def embed_text(texts):
-    """Get embeddings using SentenceTransformer"""
-    if isinstance(texts, str):
-        texts = [texts]
-    embeddings = model.encode(texts, convert_to_numpy=True)
-    return embeddings.astype("float32")
-
-def evaluate_and_summarize(chunks, query):
-    """
-    Use Gemini to:
-    1. Evaluate relevance of FAISS chunks
-    2. Optionally refine query
-    3. Summarize findings clearly and concisely
-    """
-    context_text = "\n\n".join([f"[{c['title']} | {c['section']}]\n{c['chunk_text']}" for c in chunks])
-
-    prompt = f"""
-    You are a Research Assistant that helps users find relevant academic literature. You are connected to a FAISS vector database that returns chunks of text from possible sources.
-
-    Follow these rules:
-
-    Understand the user’s query. Infer what type of research the user is looking for.
-
-    Evaluate FAISS chunks carefully. The chunks may be inaccurate, loosely related, or irrelevant. Do not blindly trust them.
-
-    Refine query once if needed. If the initial FAISS chunks seem unrelated or insufficient, reformulate the user’s query into a clearer, more precise research query and re-query FAISS only once. After that, continue with the results you have.
-
-    Build the final answer.
-
-    If relevant sources are found, summarize and synthesize them clearly, citing which chunks they came from.
-
-    If the chunks are not relevant, be transparent: explain that no directly related results were found, but still provide the returned chunks as references.
-
-    Be clear, concise, and act like a careful research assistant. Do not overclaim. Always distinguish between relevant findings and weak/irrelevant matches.
-
-    User query: "{query}"
-
-    FAISS chunks:
-    {context_text}
-    """
-
-    response = gemini_client.models.generate_content(
-        model=CHAT_MODEL,
-        contents=prompt
-    )
-    return response.text
 
 @app.route("/api/chatbot", methods=["POST"])
 def chatbot():
@@ -296,6 +348,46 @@ def chatbot():
         "retrieved_chunks": results
     })
 
+@app.route("/api/chatbot/ask", methods=["POST"])
+def chatbot_ask():
+    data = request.json
+    query = data.get("query", "")
+    link = data.get("link", "").strip()
+
+    if not query:
+        return jsonify({"error": "Missing query"}), 400
+
+    if not link:
+        return jsonify({
+            "response": "Please include a valid research paper link (like a PMC or DOI) so I can analyze it."
+        }), 400
+
+    sys_prompt = SYSTEM_PROMPT + f"\n\nPaper URL: {link}\n\nUser question: {query}"
+    
+    response = gemini_client.models.generate_content(
+        model=CHAT_MODEL,
+        contents=sys_prompt,
+        config=GenerateContentConfig(
+            tools=[{"url_context": {}}]
+            )
+    )   
+
+    # 🔹 Safely extract text
+    if response and response.candidates:
+        candidate = response.candidates[0]
+        parts = getattr(candidate.content, "parts", [])
+        answer = "".join([getattr(p, "text", "") for p in parts]).strip()
+        url_metadata = getattr(candidate, "url_context_metadata", [])
+    else:
+        answer = "No response received from Gemini."
+        url_metadata = []
+
+    return jsonify({
+        "Link": link,
+        "Query": query,
+        "Answer": answer,
+    })
+    
 # Main
 if __name__ == "__main__":
     app.run(debug=True, use_reloader=True, port=5000)
