@@ -15,14 +15,13 @@ function mapToPublication(raw: any): Publication {
     title: raw.Title,
     authors: raw.Authors || [],
     abstract: raw.Abstract || "",
-    link: raw.DOI?.startsWith("http") ? raw.DOI : `https://doi.org/${raw.DOI}`,
+    link: raw.DOI?.startsWith("http") ? raw.DOI : `https://www.ncbi.nlm.nih.gov/pmc/articles/${raw.PMCID}/`,
     year: raw.PublicationDate
       ? new Date(raw.PublicationDate).getFullYear().toString()
       : "Unknown",
   };
 }
 
-// 🔹 Regular fetch for pagination (no search)
 export async function getPapers(page = 1, limit = 9) {
   const res = await fetch(`${API_BASE_URL}/get_papers?page=${page}&limit=${limit}`);
   if (!res.ok) throw new Error(`Error ${res.status}: Failed to fetch papers`);
@@ -34,7 +33,6 @@ export async function getPapers(page = 1, limit = 9) {
   };
 }
 
-// 🔹 Fetch a single paper
 export async function getPaper(pmcid: string) {
   const res = await fetch(`${API_BASE_URL}/get_paper/${pmcid}`, {
     headers: {
@@ -59,7 +57,6 @@ export async function searchPapers(query: string, page = 1, limit = 9) {
 
   const data = await res.json();
 
-  // Fetch full details for each PMCID (from /get_paper/<pmcid>)
   const fullPapers = await Promise.all(
     data.papers.map((r: any) => getPaper(r.PMCID))
   );
@@ -72,4 +69,41 @@ export async function searchPapers(query: string, page = 1, limit = 9) {
   };
 }
 
+export async function askChatbot(query: string, top_k = 10) {
+  const res = await fetch(`${API_BASE_URL}/chatbot`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, top_k }),
+  });
 
+  if (!res.ok) throw new Error(`Error ${res.status}: Failed to get chatbot response`);
+
+  const data = await res.json();
+
+  return {
+    summary: data.summary,
+    retrievedChunks: data.retrieved_chunks,
+  };
+}
+
+export async function chatbotAsk(query: string, link: string) {
+  const res = await fetch(`${API_BASE_URL}/chatbot/ask`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, link }),
+  });
+
+  if (!res.ok) throw new Error(`Error ${res.status}: Failed to get chatbot response`);
+
+  const data = await res.json();
+
+  return {
+    link: data.Link,
+    query: data.Query,
+    answer: data.Answer,
+  };
+}

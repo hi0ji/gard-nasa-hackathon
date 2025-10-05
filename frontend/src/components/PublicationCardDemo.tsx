@@ -7,7 +7,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import { Calendar, ExternalLink, Heart, MoreVertical, Sparkles, Users } from "lucide-react";
+import { Calendar, ExternalLink, MoreVertical, Sparkles, Users } from "lucide-react";
 import {
   Tooltip,
   TooltipTrigger,
@@ -21,12 +21,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from "./ui/button";
 
+
 interface Publication {
-  id: string;
+  id: string;  
   title: string;
   authors: string[];
   abstract: string;
-  link: string;
+  link: string;  
   year: string;
 }
 
@@ -40,78 +41,84 @@ const truncateText = (text: string, maxLength: number) => {
 };
 
 const PublicationCardDemo = ({ publication }: PublicationCardProps) => {
-  const [lineClamp, setLineClamp] = useState(7);  // Default to 7 lines for abstract
+  const [lineClamp, setLineClamp] = useState(7); 
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
-  // Function to calculate and set the line clamp based on title length
   useEffect(() => {
     if (titleRef.current) {
       const titleHeight = titleRef.current.clientHeight;
 
-      // Adjust line-clamp based on title height (2 or 3 lines vs. 4+ lines)
-      if (titleHeight < 60) {  // Assuming 60px height is roughly 2-3 lines of text
-        setLineClamp(10);  // More lines for shorter titles
+      if (titleHeight < 60) { 
+        setLineClamp(10);
       } else {
-        setLineClamp(7);  // Fewer lines for longer titles
+        setLineClamp(7); 
       }
     }
-  }, [publication.title]); // Re-run when the title changes
+  }, [publication.title]);
   const navigate = useNavigate();
   
   return (
-    <Card
-      className="transition-all hover:shadow-lg relative overflow-hidden flex flex-col h-full"
-    >
-      <CardHeader>
-        <div className="flex flex-col gap-1">
-          {/* Title and dropdown side-by-side */}
-          <div className="flex items-center justify-between">
-            <CardTitle ref={titleRef} className="text-xl text-left mb-0">
-              {publication.title}
-            </CardTitle>
+    <Card className="transition-all hover:shadow-lg relative overflow-hidden flex flex-col h-full">
+      <CardHeader className="relative">
+        <div className="flex items-start justify-between w-full gap-2">
+          {/* Title */}
+          <CardTitle ref={titleRef} className="text-xl text-left mb-0">
+            {publication.title}
+          </CardTitle>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => navigate('/ask-gards')}>
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Summarize with GARD
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate(`/publication/${publication.id}`)}>
-                  <ExternalLink className="mr-2 h-4 w-4" />
-                  View Details
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Date and author info below the title */}
-          <CardDescription className="text-sm text-left">
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Calendar className="h-3 w-3" />
-                <span>{publication.year}</span>
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="flex items-center gap-1 cursor-default">
-                    <Users className="h-3 w-3" />
-                    <span>{publication.authors.length} authors</span>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs max-h-40 overflow-y-auto text-xs p-2 leading-snug">
-                  {publication.authors.join(", ")}
-                </TooltipContent>
-              </Tooltip>
-            </div>
-          </CardDescription>
+          {/* Dropdown button aligned right */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 mt-1"
+              >
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => navigate("/synthesize", { state: { publication } })}>
+                <Sparkles className="mr-2 h-4 w-4" />
+                Summarize with GARD
+              </DropdownMenuItem>
+              <DropdownMenuItem 
+                onClick={(e) => {
+                  e.stopPropagation(); 
+                  const pmcidUrl = publication.link.startsWith("http")
+                    ? publication.link
+                    : `https://www.ncbi.nlm.nih.gov/pmc/articles/${publication.id}`;
+                  window.open(pmcidUrl, "_blank");
+                }}
+              >
+                <ExternalLink className="mr-2 h-4 w-4" />
+                View Details
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-      </CardHeader>
 
+        {/* Date and author info below the title */}
+        <CardDescription className="text-sm text-left">
+          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+            <div className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              <span>{publication.year}</span>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1 cursor-default">
+                  <Users className="h-3 w-3" />
+                  <span>{publication.authors.length} authors</span>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs max-h-40 overflow-y-auto text-xs p-2 leading-snug">
+                {publication.authors.join(", ")}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </CardDescription>
+      </CardHeader>
 
       <CardContent className="flex-grow flex flex-col">
         <Tooltip>
@@ -124,7 +131,7 @@ const PublicationCardDemo = ({ publication }: PublicationCardProps) => {
                 WebkitLineClamp: lineClamp,
               }}
             >
-              {truncateText(publication.abstract, 500)} {/* Adjust text truncation */}
+              {truncateText(publication.abstract, 500)}
             </p>
           </TooltipTrigger>
           <TooltipContent
@@ -143,4 +150,3 @@ const PublicationCardDemo = ({ publication }: PublicationCardProps) => {
 };
 
 export default PublicationCardDemo;
-

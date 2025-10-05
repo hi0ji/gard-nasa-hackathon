@@ -25,6 +25,8 @@ interface Publication {
 
 const PAGE_SIZE = 9;
 
+const CACHE_PREFIX = "publications_cache";
+
 const Publications = () => {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -33,20 +35,68 @@ const Publications = () => {
   const [loading, setLoading] = useState(false);
   const [searching, setSearching] = useState(false);
 
-  // Fetch data on page change (based on search mode)
+  const getCacheKey = (query: string, page: number) =>
+    `${CACHE_PREFIX}_${query.trim().toLowerCase() || "all"}_page_${page}`;
+
+  const saveToCache = (
+    query: string,
+    page: number,
+    data: { papers: Publication[]; total: number }
+  ) => {
+    try {
+      localStorage.setItem(getCacheKey(query, page), JSON.stringify(data));
+    } catch (e) {
+      console.warn("Failed to save cache", e);
+    }
+  };
+
+  const loadFromCache = (query: string, page: number) => {
+    try {
+      const cached = localStorage.getItem(getCacheKey(query, page));
+      if (cached) {
+        return JSON.parse(cached) as { papers: Publication[]; total: number };
+      }
+    } catch (e) {
+      console.warn("Failed to load cache", e);
+    }
+    return null;
+  };
+
+  const clearAllCache = () => {
+    try {
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith(CACHE_PREFIX)) {
+          localStorage.removeItem(key);
+        }
+      });
+    } catch (e) {
+      console.warn("Failed to clear cache", e);
+    }
+  };
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
+
+      const cachedData = loadFromCache(searching ? searchQuery : "", currentPage);
+      if (cachedData) {
+        setPublications(cachedData.papers);
+        setTotalPages(Math.ceil(cachedData.total / PAGE_SIZE));
+        setLoading(false);
+        return;
+      }
+
       try {
+        let data;
         if (searching) {
-          const data = await searchPapers(searchQuery, currentPage, PAGE_SIZE);
-          setPublications(data.papers);
-          setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+          data = await searchPapers(searchQuery, currentPage, PAGE_SIZE);
         } else {
-          const data = await getPapers(currentPage, PAGE_SIZE);
-          setPublications(data.papers);
-          setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+          data = await getPapers(currentPage, PAGE_SIZE);
         }
+
+        setPublications(data.papers);
+        setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+        saveToCache(searching ? searchQuery : "", currentPage, data);
       } catch (err) {
         console.error("Failed to fetch publications:", err);
       } finally {
@@ -57,9 +107,11 @@ const Publications = () => {
     fetchData();
   }, [currentPage, searching]);
 
-  // Handle search button click
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
+
+    clearAllCache();
+
     setSearching(true);
     setCurrentPage(1);
 
@@ -68,6 +120,7 @@ const Publications = () => {
       const data = await searchPapers(searchQuery, 1, PAGE_SIZE);
       setPublications(data.papers);
       setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+      saveToCache(searchQuery, 1, data);
     } catch (err) {
       console.error("Search failed:", err);
     } finally {
@@ -75,8 +128,9 @@ const Publications = () => {
     }
   };
 
-  // Clear search and reset to default
   const clearFilters = async () => {
+    clearAllCache();
+
     try {
       setLoading(true);
       setSearchQuery("");
@@ -85,6 +139,7 @@ const Publications = () => {
       const data = await getPapers(1, PAGE_SIZE);
       setPublications(data.papers);
       setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+      saveToCache("", 1, data);
     } catch (err) {
       console.error("Failed to reset filters:", err);
     } finally {
@@ -92,7 +147,6 @@ const Publications = () => {
     }
   };
 
-  // Page change
   const onPageChange = (page: number) => {
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
@@ -133,35 +187,37 @@ const Publications = () => {
           </p>
         </div>
 
-        {/* Search */}
         <div className="bg-card rounded-lg p-6 shadow-soft mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 m-2">
-            <div className="relative flex lg:col-span-2">
+          <div className="flex flex-col md:flex-row md:items-center gap-4 m-2">
+            {/* Search Input */}
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search publications, authors, or keywords..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 pr-24"
+                className="pl-10"
               />
+            </div>
+
+            {/* Button Group: Search & Clear Filters */}
+            <div className="flex flex-col sm:flex-row sm:justify-end gap-2">
               <Button
                 onClick={handleSearch}
                 disabled={!searchQuery.trim() || loading}
-                className="absolute right-1 top-1/2 -translate-y-1/2"
               >
                 Search
               </Button>
-            </div>
 
-            <Button
-              variant="outline"
-              onClick={clearFilters}
-              disabled={!searchQuery && !searching}
-              className="w-full"
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Clear Filters
-            </Button>
+              <Button
+                variant="outline"
+                onClick={clearFilters}
+                disabled={!searchQuery && !searching}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Clear Filters
+              </Button>
+            </div>
           </div>
         </div>
 
