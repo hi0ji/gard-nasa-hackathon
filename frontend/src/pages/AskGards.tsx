@@ -53,38 +53,8 @@ const AskGards = () => {
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto px-4">
               Your AI-powered assistant for NASA bioscience research. Ask questions about publications,
-              research insights, or explore the knowledge graph.
+              research insights, or summary of research papers.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-8 max-w-2xl w-full px-4">
-              <button
-                onClick={() => setInput('Tell me about recent NASA bioscience publications')}
-                className="p-4 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left"
-              >
-                <div className="font-medium mb-1">Recent Publications</div>
-                <div className="text-sm text-muted-foreground">Explore the latest research</div>
-              </button>
-              <button
-                onClick={() => setInput('What are the key research insights?')}
-                className="p-4 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left"
-              >
-                <div className="font-medium mb-1">Key Insights</div>
-                <div className="text-sm text-muted-foreground">Discover research trends</div>
-              </button>
-              <button
-                onClick={() => setInput('Explain the knowledge graph connections')}
-                className="p-4 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left"
-              >
-                <div className="font-medium mb-1">Knowledge Graph</div>
-                <div className="text-sm text-muted-foreground">Understand research relationships</div>
-              </button>
-              <button
-                onClick={() => setInput('How can I search for specific topics?')}
-                className="p-4 rounded-lg border border-border bg-card hover:bg-accent transition-colors text-left"
-              >
-                <div className="font-medium mb-1">Search Tips</div>
-                <div className="text-sm text-muted-foreground">Get help with searching</div>
-              </button>
-            </div>
           </div>
         ) : (
           <>

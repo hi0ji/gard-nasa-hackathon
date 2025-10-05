@@ -11,17 +11,8 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { RotateCcw, Search } from "lucide-react";
-import rawData from "../../.././backend/data/all_articles_combined.json";
 import PublicationCardDemo from "@/components/PublicationCardDemo";
-
-interface RawPublication {
-  PMCID: string;
-  Title: string;
-  Authors: string[];
-  Abstract: string;
-  DOI: string;
-  PublicationDate: string;
-}
+import { getPapers, searchPapers } from "@/services/apiService";
 
 interface Publication {
   id: string;
@@ -38,62 +29,82 @@ const Publications = () => {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
 
+  // Fetch data on page change (based on search mode)
   useEffect(() => {
-    const transformed = (rawData as RawPublication[]).map((item) => ({
-      id: item.PMCID,
-      title: item.Title,
-      authors: item.Authors, // keep as array
-      abstract: item.Abstract,
-      link: item.DOI.startsWith("http")
-        ? item.DOI
-        : `https://doi.org/${item.DOI}`,
-      year: new Date(item.PublicationDate).getFullYear().toString(),
-    }));
-    setPublications(transformed);
-  }, []);
+    async function fetchData() {
+      setLoading(true);
+      try {
+        if (searching) {
+          const data = await searchPapers(searchQuery, currentPage, PAGE_SIZE);
+          setPublications(data.papers);
+          setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+        } else {
+          const data = await getPapers(currentPage, PAGE_SIZE);
+          setPublications(data.papers);
+          setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+        }
+      } catch (err) {
+        console.error("Failed to fetch publications:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-  // Filter publications based on search query
-  const filteredPublications = publications.filter((pub) => {
-    const query = searchQuery.toLowerCase();
-    return (
-      pub.title.toLowerCase().includes(query) ||
-      pub.abstract.toLowerCase().includes(query) ||
-      pub.authors.some((author) => author.toLowerCase().includes(query))
-    );
-  });
+    fetchData();
+  }, [currentPage, searching]);
 
-  // Reset page to 1 when filter changes
-  useEffect(() => {
+  // Handle search button click
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
     setCurrentPage(1);
-  }, [searchQuery]);
 
-  const totalPages = Math.ceil(filteredPublications.length / PAGE_SIZE);
+    setLoading(true);
+    try {
+      const data = await searchPapers(searchQuery, 1, PAGE_SIZE);
+      setPublications(data.papers);
+      setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+    } catch (err) {
+      console.error("Search failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  // Paginate the filtered publications
-  const paginatedPublications = filteredPublications.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE
-  );
+  // Clear search and reset to default
+  const clearFilters = async () => {
+    try {
+      setLoading(true);
+      setSearchQuery("");
+      setSearching(false);
+      setCurrentPage(1);
+      const data = await getPapers(1, PAGE_SIZE);
+      setPublications(data.papers);
+      setTotalPages(Math.ceil(data.total / PAGE_SIZE));
+    } catch (err) {
+      console.error("Failed to reset filters:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const clearFilters = () => setSearchQuery("");
-
+  // Page change
   const onPageChange = (page: number) => {
     if (page < 1 || page > totalPages) return;
     setCurrentPage(page);
-    // Scroll to top or desired position when page changes
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Generate page numbers with ellipsis for large sets
   const getPageNumbers = () => {
     const pages: (number | "start-ellipsis" | "end-ellipsis")[] = [];
     const maxPagesToShow = 5;
 
     if (totalPages <= maxPagesToShow) {
-      for (let i = 1; i <= totalPages; i++) {
-        pages.push(i);
-      }
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
       pages.push(1);
       if (currentPage > 3) pages.push("start-ellipsis");
@@ -101,15 +112,11 @@ const Publications = () => {
       const start = Math.max(2, currentPage - 1);
       const end = Math.min(totalPages - 1, currentPage + 1);
 
-      for (let i = start; i <= end; i++) {
-        pages.push(i);
-      }
+      for (let i = start; i <= end; i++) pages.push(i);
 
       if (currentPage < totalPages - 2) pages.push("end-ellipsis");
-
       pages.push(totalPages);
     }
-
     return pages;
   };
 
@@ -126,23 +133,30 @@ const Publications = () => {
           </p>
         </div>
 
-        {/* Search and Filters */}
+        {/* Search */}
         <div className="bg-card rounded-lg p-6 shadow-soft mb-8">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 m-2">
-            <div className="relative lg:col-span-2">
+            <div className="relative flex lg:col-span-2">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
                 placeholder="Search publications, authors, or keywords..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
+                className="pl-10 pr-24"
               />
+              <Button
+                onClick={handleSearch}
+                disabled={!searchQuery.trim() || loading}
+                className="absolute right-1 top-1/2 -translate-y-1/2"
+              >
+                Search
+              </Button>
             </div>
 
             <Button
               variant="outline"
               onClick={clearFilters}
-              disabled={!searchQuery}
+              disabled={!searchQuery && !searching}
               className="w-full"
             >
               <RotateCcw className="mr-2 h-4 w-4" />
@@ -151,15 +165,31 @@ const Publications = () => {
           </div>
         </div>
 
+        {/* Results Info */}
+        {!loading && (
+          <div className="text-center text-muted-foreground mb-4">
+            {searching
+              ? `Showing search results (Page ${currentPage} of ${totalPages})`
+              : `Showing all publications (Page ${currentPage} of ${totalPages})`}
+          </div>
+        )}
+
         {/* Publication Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {paginatedPublications.map((publication) => (
-            <div key={publication.id} className="h-[400px]">
-              {/* fixed height wrapper */}
-              <PublicationCardDemo publication={publication} />
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <p className="text-center text-muted-foreground">Loading...</p>
+        ) : publications.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {publications.map((publication) => (
+              <div key={publication.id} className="h-[400px]">
+                <PublicationCardDemo publication={publication} />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-muted-foreground">
+            No publications found.
+          </p>
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (

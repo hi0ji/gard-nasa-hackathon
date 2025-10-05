@@ -44,7 +44,7 @@ const NavBar = () => {
     <div className="flex items-center gap-2">
       <Rocket className="h-6 w-6 text-primary" />
       <span className="text-xl font-bold text-primary">
-        NASA Bioscience
+        NASA Biology Engine
       </span>
     </div>
 
