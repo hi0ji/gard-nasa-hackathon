@@ -263,11 +263,16 @@ def search_papers():
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    expanded_words = expand_query_with_gemini(query, num_words=3)
+    # Check if query is a link
+    if "http" in query.lower():
+        expanded_words = [query]  # no expansion, it's a URL
+    else:
+        expanded_words = expand_query_with_gemini(query, num_words=3)
+
 
     # Score titles
     scores = []
-    searchable_fields = ["Title", "PMCID", "Authors", "Year"]
+    searchable_fields = ["Title", "PMCID", "Authors", "PublicationDate", "URL"]
 
     for _, row in df.iterrows():
         match_count = 0
@@ -372,20 +377,78 @@ def chatbot_ask():
             )
     )   
 
-    # 🔹 Safely extract text
+        # 🔹 Safely extract text answer
     if response and response.candidates:
         candidate = response.candidates[0]
         parts = getattr(candidate.content, "parts", [])
-        answer = "".join([getattr(p, "text", "") for p in parts]).strip()
-        url_metadata = getattr(candidate, "url_context_metadata", [])
+        # answer = "".join([getattr(p, "text", "") for p in parts]).strip()
+
+        if parts:
+            # ✅ Safely join only valid text parts
+            answer = "".join([
+                p.text for p in parts if p and getattr(p, "text", None)
+            ]).strip()
+        else:
+            answer = "No textual content found in Gemini's response."
+
+        # Url context metadata can be either a single object or a list — normalize to list
+        raw_meta = getattr(candidate, "url_context_metadata", None)
+        metas = []
+        if raw_meta:
+            if isinstance(raw_meta, (list, tuple)):
+                metas = raw_meta
+            else:
+                metas = [raw_meta]
     else:
         answer = "No response received from Gemini."
-        url_metadata = []
+        metas = []
+
+    # 🔹 Build JSON-serializable references list and try to get the title
+    references = []
+    title = None
+    for m in metas:
+        # use getattr to avoid errors if attribute is missing
+        url = getattr(m, "url", None) or getattr(m, "uri", None)
+        mtitle = getattr(m, "title", None) or getattr(m, "name", None)
+        desc = getattr(m, "description", None) or getattr(m, "snippet", None)
+
+        references.append({
+            "url": url,
+            "title": mtitle,
+            "description": desc
+        })
+
+        if not title and mtitle:
+            title = mtitle
+
+    # 🔹 Fallback: scrape the <title> tag from the page (simple regex, no bs4 required)
+    if not title:
+        try:
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/128.0.0.0 Safari/537.36"
+                )
+            }
+            r = requests.get(link, headers=headers, timeout=8)
+            r.raise_for_status()
+            m = re.search(r"<title>(.*?)</title>", r.text, re.I | re.S)
+            if m:
+                title = m.group(1).strip()
+        except Exception:
+            title = None
+
+    # Final safe defaults
+    if not title:
+        title = "Unknown Title"
 
     return jsonify({
         "Link": link,
         "Query": query,
+        "Title": title,
         "Answer": answer,
+        "References": references
     })
     
 # Main
