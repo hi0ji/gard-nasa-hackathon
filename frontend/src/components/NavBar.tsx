@@ -1,4 +1,4 @@
-import { BotMessageSquare, Home, LibraryBig, Menu, Network, Rocket } from 'lucide-react';
+import { BotMessageSquare, Home, LibraryBig, Menu, Network, Rocket, Users } from 'lucide-react';
 import { useState } from 'react'
 import { NavLink } from 'react-router-dom';
 import { Sheet, SheetContent, SheetTrigger } from './ui/sheet';
@@ -13,6 +13,7 @@ const NavBar = () => {
     { to: '/', label: 'Home', icon: Home },
     { to: '/publications', label: 'Publications', icon: LibraryBig },
     { to: '/ask-gards', label: 'Ask GARDS', icon: BotMessageSquare },
+    { to: '/about', label: 'About', icon: Users },
   ];
 
   const NavContent = () => (

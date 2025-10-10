@@ -6,6 +6,7 @@ import Home from './pages/Home'
 import Publications from './pages/Publications'
 import AskGards from './pages/AskGards'
 import Synthesize from './pages/Synthesize'
+import About from './pages/About'
 
 function App() {
 
@@ -20,6 +21,7 @@ function App() {
               <Route path='/publications' element={<Publications />} />
               <Route path='/ask-gards' element={<AskGards />} />
               <Route path='/synthesize' element={<Synthesize />} />
+              <Route path='/about' element={<About />} />
             </Routes>
           </div>
         </BrowserRouter>
