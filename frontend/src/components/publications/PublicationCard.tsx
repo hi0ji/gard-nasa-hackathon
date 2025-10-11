@@ -19,17 +19,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Button } from "./ui/button";
+import { Button } from "../ui/button";
+import type { Publication } from "@/types";
 
-
-interface Publication {
-  id: string;  
-  title: string;
-  authors: string[];
-  abstract: string;
-  link: string;  
-  year: string;
-}
 
 interface PublicationCardProps {
   publication: Publication;
@@ -40,7 +32,7 @@ const truncateText = (text: string, maxLength: number) => {
   return text.slice(0, maxLength) + "...";
 };
 
-const PublicationCardDemo = ({ publication }: PublicationCardProps) => {
+const PublicationCard = ({ publication }: PublicationCardProps) => {
   const [lineClamp, setLineClamp] = useState(7); 
   const titleRef = useRef<HTMLHeadingElement | null>(null);
 
@@ -149,4 +141,4 @@ const PublicationCardDemo = ({ publication }: PublicationCardProps) => {
   );
 };
 
-export default PublicationCardDemo;
+export default PublicationCard;

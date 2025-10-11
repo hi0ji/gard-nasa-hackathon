@@ -1,11 +1,4 @@
-export interface Publication {
-  id: string;
-  title: string;
-  authors: string[];
-  abstract: string;
-  link: string;
-  year: string;
-}
+import type { Publication } from "@/types";
 
 const API_BASE_URL = "https://xqb2zf5n-5000.asse.devtunnels.ms/api";
 
